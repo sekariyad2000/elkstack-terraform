@@ -144,4 +144,4 @@ Je platform is nu klaar voor gebruik! Je kunt eenvoudig nieuwe projecten onboard
 
 ## ✍️ Auteur
 
-Gemaakt voor stage/project aan de hand van een onderzoeksopdracht over monitoring in de cloud (Azure).
+Gemaakt voor project aan de hand van een onderzoeksopdracht over monitoring in de cloud (Azure).
