@@ -1,47 +1,48 @@
+
 # ELK Monitoring Platform on Azure (AKS + Fleet Server)
 
-Deze repository bevat een complete setup voor een schaalbare ELK stack in Azure, inclusief:
+This repository contains a complete setup for a scalable ELK stack on Azure, including:  
 - AKS cluster  
 - Fleet Server & Agent VMs  
-- Elasticsearch, Kibana en Logstash  
-- Automatisering via Terraform  
-- Scripts om gevoelige tokens/credentials op te halen  
+- Elasticsearch, Kibana, and Logstash  
+- Automation via Terraform  
+- Scripts to retrieve sensitive tokens/credentials  
 
 ---
 
-## ⚙️ Vereisten
+## ⚙️ Requirements
 
 - Azure Subscription  
 - Terraform  
 - Azure CLI  
-- Git Bash of WSL (voor Bash-scripts)  
-- Poorten 5601, 8220, 9200, 5044 open op NSG  
-- OpenSSH (voor SSH naar VMs)  
+- Git Bash or WSL (for Bash scripts)  
+- Ports 5601, 8220, 9200, 5044 open in the NSG  
+- OpenSSH (for SSH access to VMs)  
 
 ---
 
-## ✏️ Stap 1 – Voorbereiding
+## ✏️ Step 1 – Preparation
 
-### ✅ Configuratie Visual Studio Code
+### ✅ Visual Studio Code Configuration
 
-#### Stap 1:
-Open Visual Studio Code in de map waar `main.tf` staat. Zet de terminal om naar **Git Bash**.
+#### Step 1:
+Open Visual Studio Code in the folder where `main.tf` is located. Switch the terminal to **Git Bash**.
 
-#### Stap 2:
-Log in via Azure CLI:
+#### Step 2:
+Log in using Azure CLI:
 
 ```bash
 az login
 ```
 
-Heb je meerdere subscriptions? Selecteer de juiste via:
+Do you have multiple subscriptions? Select the correct one via:
 
 ```bash
-az account set --subscription "Subscription-ID-of-Naam"
+az account set --subscription "Subscription-ID-or-Name"
 ```
 
-#### Stap 3:
-Kloon de repo via:
+#### Step 3:
+Clone the repository:
 
 ```bash
 git clone https://github.com/Ooffuss1453/elkstack-terraform
@@ -49,18 +50,18 @@ git clone https://github.com/Ooffuss1453/elkstack-terraform
 
 ---
 
-## ☁️ Stap 2 – Deploy infrastructuur
+## ☁️ Step 2 – Deploy Infrastructure
 
-1. Open een **Git Bash terminal** in de map waar `main.tf` staat.
-2. Achterhaal je Subscription ID via:
+1. Open a **Git Bash terminal** in the folder where `main.tf` is located.  
+2. Retrieve your Subscription ID with:
 
 ```bash
 az account show --output json
 ```
 
-📋 Kopieer de waarde van `id` en sla die tijdelijk op.
+📋 Copy the `id` value and save it temporarily.
 
-3. Start de Terraform setup:
+3. Start the Terraform setup:
 
 ```bash
 terraform init
@@ -68,26 +69,26 @@ terraform plan
 terraform apply
 ```
 
-Tijdens `terraform apply` wordt je automatisch gevraagd om je subscription ID:
+During `terraform apply`, you’ll be asked for your subscription ID:
 
-📸 Zie:  
+📸 See:  
 > var.subscription_id  
-> Azure Subscription ID (wordt gevraagd bij uitvoeren)  
+> Azure Subscription ID (prompted during execution)  
 > Enter a value:
 
-Voer hier je gekopieerde ID in. Bevestig met `yes`. Dit duurt ongeveer **6–8 minuten**.
+Enter your copied ID. Confirm with `yes`. This will take about **6–8 minutes**.
 
-✅ Dit maakt:  
+✅ This will create:  
 - AKS cluster  
 - Fleet & Agent VMs  
-- VNet, IP’s, subnets, NSG  
-- ELK stack op Kubernetes  
+- VNet, IPs, subnets, NSG  
+- ELK stack on Kubernetes  
 
 ---
 
-## 🔐 Stap 3 – Gevoelige gegevens ophalen
+## 🔐 Step 3 – Retrieve Sensitive Credentials
 
-Voer onderstaande scripts uit vanuit de hoofdmap:
+Run the following scripts from the main folder:
 
 ```bash
 bash elastic-enrollment-token.sh
@@ -95,74 +96,75 @@ bash elastic-password.sh
 bash kibana-verification-code.sh
 ```
 
-📋 Noteer:
+📋 Note down:
 - Kibana Verification Code  
-- Elasticsearch wachtwoord  
+- Elasticsearch password  
 - Enrollment token  
 
 ---
 
-## 🌐 Stap 4 – Open Kibana via Azure
+## 🌐 Step 4 – Access Kibana via Azure
 
-1. Ga naar Azure Portal → resource group `Dataplatform-Group-Monitoring`  
-2. Open de AKS cluster → Services  
-3. Zoek `kibana` → kopieer het **externe IP**  
-4. Open in je browser en volg de setup  
+1. Go to Azure Portal → resource group `Dataplatform-Group-Monitoring`  
+2. Open the AKS cluster → Services  
+3. Find `kibana` → copy the **external IP**  
+4. Open it in your browser and follow the setup  
 
 ---
 
-## 🛰️ Stap 5 – Fleet Server installeren
+## 🛰️ Step 5 – Install Fleet Server
 
-In deze stap installeren we de **Fleet Server** op de Fleet VM. De Fleet Server beheert alle aangesloten Elastic Agents binnen het systeem en zorgt ervoor dat loggegevens, metrics en andere data worden verzameld en doorgestuurd naar Elasticsearch. Dit vormt de kern van de monitoringarchitectuur.
+In this step, we install the **Fleet Server** on the Fleet VM. The Fleet Server manages all connected Elastic Agents and ensures that logs, metrics, and other data are collected and forwarded to Elasticsearch. This is the core of the monitoring architecture.
 
-1. Ga in Kibana naar **Fleet**  
-2. Klik op **Add Fleet Server**  
-3. Vul het **IP van de Fleet VM** in  
-4. Kopieer het gegenereerde script  
+1. In Kibana, go to **Fleet**  
+2. Click **Add Fleet Server**  
+3. Enter the **IP of the Fleet VM**  
+4. Copy the generated script  
 
-SSH naar de Fleet VM:
+SSH into the Fleet VM:
 
 ```bash
 ssh -i ssh/fleet_vm_id_rsa azureuser@<Fleet-VM-IP>
 sudo apt update && sudo apt upgrade -y
 ```
 
-Plak daarna het volledige installatiecommando in de terminal
+Then paste the full installation command into the terminal
 
-ℹ️ **Let op:**  
-- Als de installatie wordt onderbroken, moet je aan het einde van elke opdrachtregel `&&` toevoegen.
-- Als er al een eerdere installatie bestaat, verwijder deze dan eerst met:
+ℹ️ **Note:**  
+- If installation is interrupted, append `&&` at the end of each command line.  
+- If a previous installation exists, uninstall it first with:
 
 ```bash
 sudo /opt/Elastic/Agent/elastic-agent uninstall
 ```
+
 ---
 
-## 🤖 Stap 6 – Agent installeren op Agent VM
+## 🤖 Step 6 – Install Agent on Agent VM
 
-1. Klik in Kibana op **Add agent**  
-2. Vul opnieuw het IP van de Fleet VM in  
-3. Voeg **--insecure** toe aan het einde van het script  
-4. SSH naar Agent VM:
+1. In Kibana, click **Add agent**  
+2. Enter the IP of the Fleet VM again  
+3. Add **--insecure** at the end of the script  
+4. SSH into the Agent VM:
 
 ```bash
 ssh -i ssh/agent_vm_id_rsa azureuser@<Agent-VM-IP>
 sudo apt update && sudo apt upgrade -y
-# plak hier het script met --insecure
+# paste the script with --insecure here
 ```
 
 ---
 
-## 📊 Stap 7 – Monitoring uitbreiden
+## 📊 Step 7 – Expand Monitoring
 
-Gebruik het zoekveld in Kibana om integraties te activeren zoals:
+Use the search bar in Kibana to activate integrations like:
 - Azure Monitoring  
 - Kubernetes Metrics  
 - Azure Activity Logs  
 
 ---
 
-## 📁 Projectstructuur
+## 📁 Project Structure
 
 ```
 ELKSTACK-TERRAFORM/
@@ -177,14 +179,14 @@ ELKSTACK-TERRAFORM/
 
 ---
 
-## ✅ Klaar voor gebruik
+## ✅ Ready to Use
 
-Je platform is nu klaar voor gebruik! Je kunt eenvoudig nieuwe projecten onboarden door:
-- Een nieuwe namespace + elastic-agent te deployen
-- Logs/metrics worden automatisch verzameld via Fleet
+Your platform is now ready! You can easily onboard new projects by:
+- Deploying a new namespace + elastic-agent  
+- Logs/metrics are automatically collected via Fleet  
 
 ---
 
-## ✍️ Auteur
+## ✍️ Author
 
-Gemaakt voor project aan de hand van een onderzoeksopdracht over monitoring in de cloud (Azure).
+Created for a project based on a research assignment on cloud monitoring (Azure).
