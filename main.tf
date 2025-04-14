@@ -1,7 +1,7 @@
 # Set provider and use correct subscription =======================================================================================================
 provider "azurerm" {
   features {}
-  subscription_id = "642dd095-927a-4bdf-9152-d4f6609d0207"
+  subscription_id = var.subscription_id
 }
 
 
@@ -497,7 +497,7 @@ resource "kubernetes_service" "kibana" {
 
 resource "null_resource" "set_subscription" {
   provisioner "local-exec" {
-    command = "az account set --subscription 642dd095-927a-4bdf-9152-d4f6609d0207"
+    command = "az account set --subscription ${var.subscription_id}"
   }
 }
 
