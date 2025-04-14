@@ -130,23 +130,11 @@ sudo apt update && sudo apt upgrade -y
 Plak daarna het volledige installatiecommando in de terminal
 
 ℹ️ **Let op:**  
-- Als de installatie onderbroken wordt, kun je dit volledige commando opnieuw uitvoeren. Alle stappen zijn met `&&` gekoppeld.
+- Als de installatie onderbroken wordt, kun je de commando opnieuw uitvoeren. Alle stappen moeten dan met `&&` aan het einde toegevoegd worden.
 - Als er al een eerdere installatie bestaat, verwijder deze dan eerst met:
 
 ```bash
 sudo /opt/Elastic/Agent/elastic-agent uninstall
-```
-
-```bash
-curl -L -O https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-8.16.1-linux-x86_64.tar.gz && \
-tar xzvf elastic-agent-8.16.1-linux-x86_64.tar.gz && \
-cd elastic-agent-8.16.1-linux-x86_64 && \
-sudo ./elastic-agent install \
-  --fleet-server-es=https://10.0.1.7:9200 \
-  --fleet-server-service-token=AAEAAWVsYXN0aWMvZmxlZXQtc2VydmVyL3Rva2VuLTE3NDQ2MjY2MzI3NDQ6aUF5WWVBNGlRVk9Ya1ljcjU4TVJUQQ \
-  --fleet-server-policy=fleet-server-policy \
-  --fleet-server-es-ca-trusted-fingerprint=95fd24297caa83a9243f6b38ef46363435c98ef9aebe8e3e06af4ff603c2f09d \
-  --fleet-server-port=8220 \
 ```
 ---
 
