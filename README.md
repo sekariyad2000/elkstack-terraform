@@ -130,7 +130,7 @@ sudo apt update && sudo apt upgrade -y
 Plak daarna het volledige installatiecommando in de terminal
 
 ℹ️ **Let op:**  
-- Als de installatie onderbroken wordt, kun je de commando opnieuw uitvoeren. Alle stappen moeten dan met `&&` aan het einde toegevoegd worden.
+- Als de installatie wordt onderbroken, moet je aan het einde van elke opdrachtregel `&&` toevoegen.
 - Als er al een eerdere installatie bestaat, verwijder deze dan eerst met:
 
 ```bash
