@@ -113,6 +113,8 @@ bash kibana-verification-code.sh
 
 ## 🛰️ Stap 5 – Fleet Server installeren
 
+In deze stap installeren we de **Fleet Server** op de Fleet VM. De Fleet Server beheert alle aangesloten Elastic Agents binnen het systeem en zorgt ervoor dat loggegevens, metrics en andere data worden verzameld en doorgestuurd naar Elasticsearch. Dit vormt de kern van de monitoringarchitectuur.
+
 1. Ga in Kibana naar **Fleet**  
 2. Klik op **Add Fleet Server**  
 3. Vul het **IP van de Fleet VM** in  
@@ -123,9 +125,30 @@ SSH naar de Fleet VM:
 ```bash
 ssh -i ssh/fleet_vm_id_rsa azureuser@<Fleet-VM-IP>
 sudo apt update && sudo apt upgrade -y
-# plak hier het script
 ```
 
+Plak daarna het volledige installatiecommando in de terminal (inclusief `--insecure`):
+
+```bash
+curl -L -O https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-8.16.1-linux-x86_64.tar.gz && \
+tar xzvf elastic-agent-8.16.1-linux-x86_64.tar.gz && \
+cd elastic-agent-8.16.1-linux-x86_64 && \
+sudo ./elastic-agent install \
+  --fleet-server-es=https://10.0.1.7:9200 \
+  --fleet-server-service-token=AAEAAWVsYXN0aWMvZmxlZXQtc2VydmVyL3Rva2VuLTE3NDQ2MjY2MzI3NDQ6aUF5WWVBNGlRVk9Ya1ljcjU4TVJUQQ \
+  --fleet-server-policy=fleet-server-policy \
+  --fleet-server-es-ca-trusted-fingerprint=95fd24297caa83a9243f6b38ef46363435c98ef9aebe8e3e06af4ff603c2f09d \
+  --fleet-server-port=8220 \
+  --insecure
+```
+
+ℹ️ **Let op:**  
+- Als de installatie onderbroken wordt, kun je dit volledige commando opnieuw uitvoeren. Alle stappen zijn met `&&` gekoppeld.  
+- Als er al een eerdere installatie bestaat, verwijder deze dan eerst met:
+
+```bash
+sudo /opt/Elastic/Agent/elastic-agent uninstall
+```
 ---
 
 ## 🤖 Stap 6 – Agent installeren op Agent VM
