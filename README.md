@@ -88,18 +88,25 @@ Enter your copied ID. Confirm with `yes`. This will take about **6–8 minutes**
 
 ## 🔐 Step 3 – Retrieve Sensitive Credentials
 
-Run the following scripts from the main folder:
+After running `terraform apply`, Terraform will attempt to automatically retrieve the following credentials:
+
+- **Kibana Verification Code**  
+- **Elasticsearch Password**  
+- **Enrollment Token**
+
+These should appear in the Terraform output at the end of the deployment.
+
+---
+
+### ⚠️ Didn't see them?
+
+If any of the credentials are missing or show an error like `"ERROR: ..."` in the output, you can manually retrieve them by running the following scripts from the root folder of this project:
 
 ```bash
-bash elastic-enrollment-token.sh
 bash elastic-password.sh
+bash elastic-enrollment-token.sh
 bash kibana-verification-code.sh
 ```
-
-📋 Note down:
-- Kibana Verification Code  
-- Elasticsearch password  
-- Enrollment token  
 
 ---
 
