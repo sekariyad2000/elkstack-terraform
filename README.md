@@ -45,7 +45,7 @@ az account set --subscription "Subscription-ID-or-Name"
 Clone the repository:
 
 ```bash
-git clone https://github.com/Ooffuss1453/elkstack-terraform
+git clone https://github.com/sekariyad2000/elkstack-terraform
 ```
 
 ---
