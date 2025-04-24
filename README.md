@@ -96,8 +96,6 @@ After running `terraform apply`, Terraform will attempt to automatically retriev
 
 These should appear in the Terraform output at the end of the deployment.
 
----
-
 ### ⚠️ Didn't see them?
 
 If any of the credentials are missing or show an error like `"ERROR: ..."` in the output, you can manually retrieve them by running the following scripts from the root folder of this project:
