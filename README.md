@@ -189,4 +189,4 @@ Your platform is now ready! You can easily onboard new projects by:
 
 ## ✍️ Author
 
-Created for a project based on a research assignment on cloud monitoring (Azure).
+Created for a project based on a research assignment on monitoring.
