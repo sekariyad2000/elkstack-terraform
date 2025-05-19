@@ -1,23 +1,59 @@
-# Set provider and use correct subscription =======================================================================================================
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = ">= 4.0.0"
+    }
+  }
+}
+
 provider "azurerm" {
   features {}
   subscription_id = var.subscription_id
 }
 
-
-provider "kubernetes" {
-  host                   = azurerm_kubernetes_cluster.aks_cluster.kube_config[0].host
-  client_certificate     = base64decode(azurerm_kubernetes_cluster.aks_cluster.kube_config[0].client_certificate)
-  client_key             = base64decode(azurerm_kubernetes_cluster.aks_cluster.kube_config[0].client_key)
-  cluster_ca_certificate = base64decode(azurerm_kubernetes_cluster.aks_cluster.kube_config[0].cluster_ca_certificate)
-}
-
-# Networking and groups ==========================================================================================================================
-# Joine resource group agents
 data "azurerm_resource_group" "main" {
   name = "Dataplatform-Group-Monitoring"
 }
 
+resource "azurerm_kubernetes_cluster" "aks" {
+  # depends_on = [azurerm_kubernetes_cluster.aks]
+  name                = "my-aks-cluster"
+  location            = data.azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.main.name
+  dns_prefix          = "myaksdns"
+
+  default_node_pool {
+  name                = "default"
+  vm_size             = "Standard_DS3_v2"
+  os_disk_size_gb     = 50
+  type                = "VirtualMachineScaleSets"
+  auto_scaling_enabled = true
+  min_count           = 1
+  max_count           = 15
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  oidc_issuer_enabled = true
+  role_based_access_control_enabled = true
+
+  network_profile {
+    network_plugin = "azure"
+  }
+
+  tags = {
+    Environment = "dev"
+  }
+  
+}
+
+data "azurerm_kubernetes_cluster" "aks_data" {
+  name                = azurerm_kubernetes_cluster.aks.name
+  resource_group_name = azurerm_kubernetes_cluster.aks.resource_group_name
+}
 
 # Define Virtual Network
 resource "azurerm_virtual_network" "vnet" {
@@ -33,6 +69,7 @@ resource "azurerm_network_security_group" "AKSsg" {
   location = data.azurerm_resource_group.main.location
   resource_group_name = data.azurerm_resource_group.main.name
 }
+
 #Define security rules
 resource "azurerm_network_security_rule" "AgentToFleet" {
       name                        = "AgentToFleet"
@@ -128,11 +165,13 @@ resource "azurerm_subnet" "agent_subnet" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.2.0/24"]
 }
+
 #Associate subnet with Security Group
 resource "azurerm_subnet_network_security_group_association" "aks_subnet_nsg_assoc" {
   subnet_id                 = azurerm_subnet.aks_subnet.id
   network_security_group_id = azurerm_network_security_group.AKSsg.id
 }
+
 #Associate subnet with Security Group
 resource "azurerm_subnet_network_security_group_association" "agents_subnet_nsg_assoc" {
   subnet_id                 = azurerm_subnet.agent_subnet.id
@@ -155,33 +194,7 @@ resource "azurerm_public_ip" "agent_public_ip" {
   allocation_method = "Static"
 }
 
-# Create AKS Cluster in Azure =====================================================================================================================
-resource "azurerm_kubernetes_cluster" "aks_cluster" {
-  name                = "aks-cluster"
-  location            = data.azurerm_resource_group.main.location
-  resource_group_name = data.azurerm_resource_group.main.name
-  dns_prefix          = "k8s"
-
-  default_node_pool {
-    name       = "default"
-    node_count = 2
-    vm_size    = "Standard_DS2_v2"
-    vnet_subnet_id  = azurerm_subnet.aks_subnet.id
-  }
-
-  identity {
-    type = "SystemAssigned"
-  }
-
-   network_profile {
-    network_plugin    = "azure"
-    dns_service_ip    = "10.1.0.10"  # Non-overlapping range
-    service_cidr      = "10.1.0.0/16"  # Non-overlapping range
-    load_balancer_sku = "standard"
-  }
-}
-
-# Setup SSH =======================================================================================================================================
+# Setup SSH
 resource "local_file" "create_ssh_folder" {
   filename = "./ssh/.placeholder"
   content  = ""
@@ -225,7 +238,8 @@ resource "local_file" "agent_vm_public_key" {
   content    = tls_private_key.agent_vm_key.public_key_openssh
 }
 
-# Setup Agent & Fleet VM + network interfaces =======================================================================================================
+# Setup Agent & Fleet VM + network interfaces 
+
 # Network Interface for the AKS VM
 resource "azurerm_network_interface" "fleet_vm_nic" {
   name                = "fleet-vm-nic"
@@ -308,40 +322,193 @@ resource "azurerm_linux_virtual_machine" "agent_vm" {
   }
 }
 
-# Deploy Elasticsearch, Kibana and Logstash on the Kubernetes cluster =======================================================================================================
+# Deploy Elasticsearch, Kibana and Logstash on the Kubernetes cluster =========================================================================================================
+
+# providers
+provider "kubernetes" {
+  config_path = "C:\\Users\\rezai\\.kube\\config" #your kube config (usually: C:\\users\\name\\.kube\\config)
+  host                   = data.azurerm_kubernetes_cluster.aks_data.kube_config[0].host
+  client_certificate     = base64decode(data.azurerm_kubernetes_cluster.aks_data.kube_config[0].client_certificate)
+  client_key             = base64decode(data.azurerm_kubernetes_cluster.aks_data.kube_config[0].client_key)
+  cluster_ca_certificate = base64decode(data.azurerm_kubernetes_cluster.aks_data.kube_config[0].cluster_ca_certificate)
+}
+
+# subscription
+resource "null_resource" "set_subscription" {
+  provisioner "local-exec" {
+    command = "az account set --subscription ${var.subscription_id}"
+  }
+}
+
+# getting the azure credentials
+resource "null_resource" "aks_get_credentials" {
+  provisioner "local-exec" {
+    command = "az aks get-credentials --resource-group ${data.azurerm_resource_group.main.name} --name ${azurerm_kubernetes_cluster.aks.name} --overwrite-existing"
+  }
+  depends_on = [azurerm_kubernetes_cluster.aks]
+}
+
+resource "null_resource" "wait_for_elasticsearch_pod" {
+  provisioner "local-exec" {
+    command = <<EOT
+    kubectl wait --for=condition=ready pod -n default -l app=elasticsearch-alt --timeout=1200s
+    EOT
+  }
+  depends_on = [kubernetes_deployment.elasticsearch2]
+}
+
+resource "null_resource" "wait_for_kibana_pod" {
+  depends_on = [kubernetes_deployment.kibana2]
+
+  provisioner "local-exec" {
+    command = <<EOT
+      kubectl wait --for=condition=ready pod -n default -l app=kibana-alt --timeout=1200s
+    EOT
+  }
+}
+
+# using the .sh files
+data "external" "enrollment_token" {
+  program = ["bash", "${path.module}/elastic-enrollment-token.sh"]
+  depends_on = [null_resource.wait_for_elasticsearch_pod]
+}
+
+data "external" "elastic_password" {
+  program = ["bash", "${path.module}/elastic-password.sh"]
+  depends_on = [null_resource.wait_for_elasticsearch_pod]
+}
+
+data "external" "verification_code" {
+  program = ["bash", "${path.module}/kibana-verification-code.sh"]
+  depends_on = [null_resource.wait_for_kibana_pod]
+}
+
+output "enrollment_token" {
+  value = data.external.enrollment_token.result
+}
+output "elastic_password" {
+  value = data.external.elastic_password.result
+}
+
+output "verification_code" {
+  value = data.external.verification_code.result
+}
+
+# making the Persistent Volume Claim to initalize containers
+resource "kubernetes_persistent_volume_claim" "elk_pvc" {
+  metadata {
+    name      = "elk-pvc"
+    namespace = "default"
+  }
+
+  spec {
+    access_modes = ["ReadWriteOnce"]
+
+    resources {
+      requests = {
+        storage = "5Gi"
+      }
+    }
+
+    storage_class_name = "azurefile-csi"
+  }
+
+  depends_on = [
+    azurerm_kubernetes_cluster.aks,
+    null_resource.aks_get_credentials,
+  ]
+}
+
+# making the Persistent Volume Claim for ELK data
+resource "kubernetes_persistent_volume_claim" "elk_data_pvc" {
+  metadata {
+    name      = "elk-data-pvc"
+    namespace = "default"
+  }
+  spec {
+    access_modes      = ["ReadWriteOnce"]
+    resources {
+      requests = {
+        storage = "10Gi"
+      }
+    }
+    storage_class_name = "azurefile-csi"
+  }
+    depends_on = [
+    azurerm_kubernetes_cluster.aks,
+    null_resource.aks_get_credentials,
+  ]
+}
+
+# making the Persistent Volume Claim for ELK logs
+resource "kubernetes_persistent_volume_claim" "elk_logs_pvc" {
+  metadata {
+    name      = "elk-logs-pvc"
+    namespace = "default"
+  }
+  spec {
+    access_modes      = ["ReadWriteOnce"]
+    resources {
+      requests = {
+        storage = "5Gi"
+      }
+    }
+    storage_class_name = "azurefile-csi"
+  }
+    depends_on = [
+    azurerm_kubernetes_cluster.aks,
+    null_resource.aks_get_credentials,
+  ]
+}
+
+# deploying the persitent volumes
+resource "kubernetes_config_map" "logstash_config2" {
+  depends_on = [kubernetes_persistent_volume_claim.elk_pvc]
+  metadata {
+    name = "logstash-pipeline-config"
+  }
+
+  data = {
+    "logstash.conf" = <<-EOT
+      input {
+        beats {
+          port => 5044
+        }
+      }
+
+      output {
+        elasticsearch {
+          hosts => ["http://elasticsearch-alt:9200"]
+          index => "logstash-%%{+YYYY.MM.dd}"
+        }
+      }
+    EOT
+  }
+}
+
 resource "kubernetes_deployment" "elasticsearch" {
   metadata {
-    name = "elasticsearch"
+    name      = "elasticsearch"
     namespace = "default"
-    labels = {
-      app = "elasticsearch"
-    }
+    labels = { app = "elasticsearch" }
   }
 
   spec {
     replicas = 1
 
     selector {
-      match_labels = {
-        app = "elasticsearch"
-      }
+      match_labels = { app = "elasticsearch" }
     }
 
     template {
-      metadata {
-        labels = {
-          app = "elasticsearch"
-        }
-      }
+      metadata { labels = { app = "elasticsearch" } }
 
       spec {
         container {
           name  = "elasticsearch"
           image = "docker.elastic.co/elasticsearch/elasticsearch:8.16.1"
 
-          port {
-            container_port = 9200
-          }
+          port { container_port = 9200 }
 
           env {
             name  = "discovery.type"
@@ -350,12 +517,12 @@ resource "kubernetes_deployment" "elasticsearch" {
 
           resources {
             requests = {
-              memory = "1Gi"
-              cpu    = "500m"
+              cpu    = "1000m"  # request 1 CPU
+              memory = "2Gi"    # request 2 GiB RAM
             }
             limits = {
-              memory = "2Gi"
-              cpu    = "1000m"
+              cpu    = "2000m"  # cap at 2 CPU
+              memory = "4Gi"    # cap at 4 GiB RAM
             }
           }
         }
@@ -364,50 +531,48 @@ resource "kubernetes_deployment" "elasticsearch" {
   }
 }
 
-
 resource "kubernetes_deployment" "kibana" {
   metadata {
     name      = "kibana"
     namespace = "default"
-    labels = {
-      app = "kibana"
-    }
+    labels    = { app = "kibana" }
   }
 
   spec {
     replicas = 1
 
     selector {
-      match_labels = {
-        app = "kibana"
-      }
+      match_labels = { app = "kibana" }
     }
 
     template {
-      metadata {
-        labels = {
-          app = "kibana"
-        }
-      }
+      metadata { labels = { app = "kibana" } }
 
       spec {
         container {
           name  = "kibana"
           image = "docker.elastic.co/kibana/kibana:8.16.1"
 
-          port {
-            container_port = 5601
-          }
+          port { container_port = 5601 }
 
           env {
             name  = "ELASTICSEARCH_URL"
             value = "http://elasticsearch.default.svc.cluster.local:9200"
           }
-          
-          # Enable enrollment security
           env {
             name  = "xpack.security.enrollment.enabled"
             value = "true"
+          }
+
+          resources {
+            requests = {
+              cpu    = "500m"   # request 0.5 CPU
+              memory = "1Gi"    # request 1 GiB RAM
+            }
+            limits = {
+              cpu    = "1000m"  # cap at 1 CPU
+              memory = "2Gi"    # cap at 2 GiB RAM
+            }
           }
         }
       }
@@ -419,34 +584,35 @@ resource "kubernetes_deployment" "logstash" {
   metadata {
     name      = "logstash"
     namespace = "default"
-    labels = {
-      app = "logstash"
-    }
+    labels    = { app = "logstash" }
   }
 
   spec {
     replicas = 1
 
     selector {
-      match_labels = {
-        app = "logstash"
-      }
+      match_labels = { app = "logstash" }
     }
 
     template {
-      metadata {
-        labels = {
-          app = "logstash"
-        }
-      }
+      metadata { labels = { app = "logstash" } }
 
       spec {
         container {
           name  = "logstash"
           image = "docker.elastic.co/logstash/logstash:8.16.1"
 
-          port {
-            container_port = 5044
+          port { container_port = 5044 }
+
+          resources {
+            requests = {
+              cpu    = "500m"   # request 0.5 CPU
+              memory = "1Gi"    # request 1 GiB RAM
+            }
+            limits = {
+              cpu    = "1000m"  # cap at 1 CPU
+              memory = "2Gi"    # cap at 2 GiB RAM
+            }
           }
         }
       }
@@ -495,60 +661,233 @@ resource "kubernetes_service" "kibana" {
   }
 }
 
-resource "null_resource" "set_subscription" {
-  provisioner "local-exec" {
-    command = "az account set --subscription ${var.subscription_id}"
+# ELK Stack Classic Kubernetes Resources ===============================================================================================
+
+# Elasticsearch-alt with data and logs buiten outside the container
+resource "kubernetes_deployment" "elasticsearch2" {
+  depends_on = [
+    kubernetes_persistent_volume_claim.elk_data_pvc,
+    kubernetes_persistent_volume_claim.elk_logs_pvc,
+  ]
+
+  metadata {
+    name   = "elasticsearch-alt"
+    labels = { app = "elasticsearch-alt" }
+  }
+
+  spec {
+    replicas = 1
+
+    selector { match_labels = { app = "elasticsearch-alt" } }
+
+    template {
+      metadata { labels = { app = "elasticsearch-alt" } }
+      spec {
+        container {
+          name  = "elasticsearch"
+          image = "docker.elastic.co/elasticsearch/elasticsearch:8.7.0"
+
+          port { container_port = 9200 }
+
+          env {
+            name  = "discovery.type"
+            value = "single-node"
+          }
+
+          volume_mount {
+            name       = "elasticsearch-data"
+            mount_path = "/usr/share/elasticsearch/data"
+          }
+          volume_mount {
+            name       = "elasticsearch-logs"
+            mount_path = "/usr/share/elasticsearch/logs"
+          }
+        }
+
+        volume {
+          name = "elasticsearch-data"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.elk_data_pvc.metadata[0].name
+          }
+        }
+        volume {
+          name = "elasticsearch-logs"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.elk_logs_pvc.metadata[0].name
+          }
+        }
+      }
+    }
   }
 }
 
-resource "null_resource" "aks_get_credentials" {
-  provisioner "local-exec" {
-    command = "az aks get-credentials --resource-group ${data.azurerm_resource_group.main.name} --name ${azurerm_kubernetes_cluster.aks_cluster.name} --overwrite-existing"
+# Kibana-alt with persistent data mount
+resource "kubernetes_deployment" "kibana2" {
+  depends_on = [
+    kubernetes_persistent_volume_claim.elk_data_pvc,
+  ]
+
+  metadata {
+    name   = "kibana-alt"
+    labels = { app = "kibana-alt" }
   }
-  depends_on = [azurerm_kubernetes_cluster.aks_cluster]
-}
 
-resource "null_resource" "wait_for_elasticsearch_pod" {
-  provisioner "local-exec" {
-    command = <<EOT
-    kubectl wait --for=condition=ready pod -n default -l app=elasticsearch --timeout=1200s
-    EOT
+  spec {
+    replicas = 1
+
+    selector { match_labels = { app = "kibana-alt" } }
+
+    template {
+      metadata { labels = { app = "kibana-alt" } }
+      spec {
+        container {
+          name  = "kibana"
+          image = "docker.elastic.co/kibana/kibana:8.7.0"
+
+          port { container_port = 5601 }
+
+          env {
+            name  = "ELASTICSEARCH_HOSTS"
+            value = "http://elasticsearch-alt:9200"
+          }
+
+          volume_mount {
+            name       = "kibana-data"
+            mount_path = "/usr/share/kibana/data"
+          }
+        }
+
+        volume {
+          name = "kibana-data"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.elk_data_pvc.metadata[0].name
+          }
+        }
+      }
+    }
   }
-  depends_on = [kubernetes_deployment.elasticsearch]
 }
 
-resource "null_resource" "wait_for_kibana_pod" {
-  provisioner "local-exec" {
-    command = <<EOT
-    kubectl wait --for=condition=ready pod -n default -l app=kibana --timeout=1200s
-    EOT
+# Logstash-alt with  pipeline and data/log mounts
+resource "kubernetes_deployment" "logstash2" {
+  depends_on = [
+    kubernetes_persistent_volume_claim.elk_data_pvc,
+    kubernetes_persistent_volume_claim.elk_logs_pvc,
+    kubernetes_config_map.logstash_config2,
+  ]
+
+  metadata {
+    name   = "logstash-alt"
+    labels = { app = "logstash-alt" }
   }
-  depends_on = [kubernetes_deployment.kibana]
+
+  spec {
+    replicas = 1
+
+    selector { match_labels = { app = "logstash-alt" } }
+
+    template {
+      metadata { labels = { app = "logstash-alt" } }
+      spec {
+        container {
+          name  = "logstash"
+          image = "docker.elastic.co/logstash/logstash:8.7.0"
+
+          port { container_port = 5044 }
+
+          volume_mount {
+            name       = "logstash-pipeline"
+            mount_path = "/usr/share/logstash/pipeline"
+          }
+          volume_mount {
+            name       = "logstash-data"
+            mount_path = "/usr/share/logstash/data"
+          }
+          volume_mount {
+            name       = "logstash-logs"
+            mount_path = "/usr/share/logstash/logs"
+          }
+        }
+
+        volume {
+          name = "logstash-pipeline"
+          config_map {
+            name = kubernetes_config_map.logstash_config2.metadata[0].name
+          }
+        }
+        volume {
+          name = "logstash-data"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.elk_data_pvc.metadata[0].name
+          }
+        }
+        volume {
+          name = "logstash-logs"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.elk_logs_pvc.metadata[0].name
+          }
+        }
+      }
+    }
+  }
 }
 
-data "external" "enrollment_token" {
-  program = ["bash", "${path.module}/elastic-enrollment-token.sh"]
-  depends_on = [null_resource.wait_for_elasticsearch_pod]
+resource "kubernetes_service" "elasticsearch_alt" {
+  depends_on = [kubernetes_persistent_volume_claim.elk_pvc]
+  metadata {
+    name      = "elasticsearch-alt"
+    namespace = "default"
+  }
+
+  spec {
+    type = "ClusterIP"
+    selector = {
+      app = "elasticsearch-alt"
+    }
+
+    port {
+      port        = 9200
+      target_port = 9200
+    }
+  }
 }
 
-data "external" "elastic_password" {
-  program = ["bash", "${path.module}/elastic-password.sh"]
-  depends_on = [null_resource.wait_for_elasticsearch_pod]
+resource "kubernetes_service" "kibana_alt" {
+  depends_on = [kubernetes_persistent_volume_claim.elk_pvc]
+  metadata {
+    name      = "kibana-alt"
+    namespace = "default"
+  }
+
+  spec {
+    type = "ClusterIP"
+    selector = {
+      app = "kibana-alt"
+    }
+
+    port {
+      port        = 5601
+      target_port = 5601
+    }
+  }
 }
 
-data "external" "verification_code" {
-  program = ["bash", "${path.module}/kibana-verification-code.sh"]
-  depends_on = [null_resource.wait_for_kibana_pod]
-}
+resource "kubernetes_service" "logstash_alt" {
+  depends_on = [kubernetes_persistent_volume_claim.elk_pvc]
+  metadata {
+    name      = "logstash-alt"
+    namespace = "default"
+  }
 
-output "enrollment_token" {
-  value = data.external.enrollment_token.result
-}
+  spec {
+    type = "ClusterIP"
+    selector = {
+      app = "logstash-alt"
+    }
 
-output "elastic_password" {
-  value = data.external.elastic_password.result
-}
-
-output "verification_code" {
-  value = data.external.verification_code.result
+    port {
+      port        = 5044
+      target_port = 5044
+    }
+  }
 }
