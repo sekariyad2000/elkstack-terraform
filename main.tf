@@ -16,8 +16,8 @@ data "azurerm_resource_group" "main" {
   name = "Dataplatform-Group-Monitoring"
 }
 
+# Define cluster resources and hardware
 resource "azurerm_kubernetes_cluster" "aks" {
-  # depends_on = [azurerm_kubernetes_cluster.aks]
   name                = "my-aks-cluster"
   location            = data.azurerm_resource_group.main.location
   resource_group_name = data.azurerm_resource_group.main.name
@@ -25,7 +25,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
 
   default_node_pool {
   name                = "default"
-  vm_size             = "Standard_DS3_v2"
+  vm_size             = "Standard_D4_v2"
   os_disk_size_gb     = 50
   type                = "VirtualMachineScaleSets"
   auto_scaling_enabled = true
@@ -63,14 +63,14 @@ resource "azurerm_virtual_network" "vnet" {
   address_space       = ["10.0.0.0/16"]
 }
 
-#Define security group ===============================================================================================================================
+# Define security group
 resource "azurerm_network_security_group" "AKSsg" {
   name                = "SecurityGroupGeneral"
   location = data.azurerm_resource_group.main.location
   resource_group_name = data.azurerm_resource_group.main.name
 }
 
-#Define security rules
+# Define security rules
 resource "azurerm_network_security_rule" "AgentToFleet" {
       name                        = "AgentToFleet"
       priority                    = 100
@@ -136,6 +136,7 @@ resource "azurerm_network_security_rule" "FleetToElastic" {
       resource_group_name         = data.azurerm_resource_group.main.name
       network_security_group_name = azurerm_network_security_group.AKSsg.name
 }
+
 resource "azurerm_network_security_rule" "ssh_sr" {
       name                        = "ssh"
       priority                    = 105
@@ -172,13 +173,13 @@ resource "azurerm_subnet_network_security_group_association" "aks_subnet_nsg_ass
   network_security_group_id = azurerm_network_security_group.AKSsg.id
 }
 
-#Associate subnet with Security Group
+# #Associate subnet with Security Group
 resource "azurerm_subnet_network_security_group_association" "agents_subnet_nsg_assoc" {
   subnet_id                 = azurerm_subnet.agent_subnet.id
   network_security_group_id = azurerm_network_security_group.AKSsg.id
 }
 
-# Create a public IP address fleetVM
+# # Create a public IP address fleetVM
 resource "azurerm_public_ip" "fleet_public_ip" {
   name = "FleetPubIP"
   resource_group_name = data.azurerm_resource_group.main.name
@@ -219,7 +220,7 @@ resource "local_file" "fleet_vm_public_key" {
   content    = tls_private_key.fleet_vm_key.public_key_openssh
 }
 
-# Generate SSH Key for Agent VM
+#Generate SSH Key for Agent VM
 resource "tls_private_key" "agent_vm_key" {
   algorithm = "RSA"
   rsa_bits  = 2048
@@ -326,7 +327,7 @@ resource "azurerm_linux_virtual_machine" "agent_vm" {
 
 # providers
 provider "kubernetes" {
-  config_path = "C:\\Users\\rezai\\.kube\\config" #your kube config (usually: C:\\users\\name\\.kube\\config)
+  config_path = "C:\\Users\\luukr\\.kube\\config" #your kube config (usually: C:\\users\\name\\.kube\\config)
   host                   = data.azurerm_kubernetes_cluster.aks_data.kube_config[0].host
   client_certificate     = base64decode(data.azurerm_kubernetes_cluster.aks_data.kube_config[0].client_certificate)
   client_key             = base64decode(data.azurerm_kubernetes_cluster.aks_data.kube_config[0].client_key)
@@ -348,6 +349,7 @@ resource "null_resource" "aks_get_credentials" {
   depends_on = [azurerm_kubernetes_cluster.aks]
 }
 
+# Wait for pod creation
 resource "null_resource" "wait_for_elasticsearch_pod" {
   provisioner "local-exec" {
     command = <<EOT
@@ -367,8 +369,8 @@ resource "null_resource" "wait_for_kibana_pod" {
   }
 }
 
-# using the .sh files
-data "external" "enrollment_token" {
+# using the .sh files for kibana authetication
+ data "external" "enrollment_token" {
   program = ["bash", "${path.module}/elastic-enrollment-token.sh"]
   depends_on = [null_resource.wait_for_elasticsearch_pod]
 }
@@ -470,22 +472,82 @@ resource "kubernetes_config_map" "logstash_config2" {
 
   data = {
     "logstash.conf" = <<-EOT
-      input {
-        beats {
-          port => 5044
-        }
-      }
+  input {
+  beats {
+    port => 5044
+  }
 
-      output {
-        elasticsearch {
-          hosts => ["http://elasticsearch-alt:9200"]
-          index => "logstash-%%{+YYYY.MM.dd}"
-        }
-      }
+  syslog {
+    port => 514
+    id => "syslog"
+  }
+}
+
+output {
+  stdout { codec => rubydebug }
+
+  elasticsearch {
+    hosts => ["http://elasticsearch:9200"]
+    index => "logstash-%%{+YYYY.MM.dd}"
+  }
+}
     EOT
   }
 }
 
+# create the config map with yaml data for elasticsearch
+resource "kubernetes_config_map" "elasticsearch_config" {
+  metadata {
+    name = "elasticsearch-config"
+    namespace = "default"
+  }
+
+  data = {
+    "elasticsearch.yml" = <<EOT
+    cluster.name: "elk-cluster"
+    node.name: "elasticsearch"
+    network.host: "0.0.0.0"
+    http.port: 9200
+    discovery.seed_hosts: ["elasticsearch.default.svc.cluster.local"]
+    path.data: /usr/share/elasticsearch/data
+    path.logs: /usr/share/elasticsearch/logs
+    xpack.security.enabled: true
+    xpack.security.enrollment.enabled: true
+    EOT
+  }
+}
+
+# create the config map with yaml data for logstash
+resource "kubernetes_config_map" "logstash_config" {
+  metadata {
+    name = "logstash-config"
+    namespace = "default"
+  }
+
+  data = {
+    "logstash.yml" = <<EOT
+http.host: "0.0.0.0"
+xpack.monitoring.enabled: true
+    EOT
+  }
+}
+
+# create the logstash pipeline 
+resource "kubernetes_config_map" "logstash_pipelines" {
+  metadata {
+    name      = "logstash-pipelines"
+    namespace = "default"
+  }
+
+  data = {
+    "pipelines.yml" = <<EOT
+- pipeline.id: main
+  path.config: "/usr/share/logstash/pipeline/logstash.conf"
+    EOT
+  }
+}
+
+# Deploy the Elasticsearch container
 resource "kubernetes_deployment" "elasticsearch" {
   metadata {
     name      = "elasticsearch"
@@ -525,12 +587,27 @@ resource "kubernetes_deployment" "elasticsearch" {
               memory = "4Gi"    # cap at 4 GiB RAM
             }
           }
+
+          volume_mount {
+            name       = "elasticsearch-config"
+            mount_path = "/usr/share/elasticsearch/config/elasticsearch.yml"
+            sub_path   = "elasticsearch.yml"
+          }
+        }	
+
+        volume {
+          name = "elasticsearch-config"
+          config_map {
+            name = kubernetes_config_map.elasticsearch_config.metadata[0].name
+          }
         }
+        
       }
     }
   }
 }
 
+# Deploy the Kibana container
 resource "kubernetes_deployment" "kibana" {
   metadata {
     name      = "kibana"
@@ -580,6 +657,7 @@ resource "kubernetes_deployment" "kibana" {
   }
 }
 
+# Deploy the Logstash container
 resource "kubernetes_deployment" "logstash" {
   metadata {
     name      = "logstash"
@@ -613,6 +691,32 @@ resource "kubernetes_deployment" "logstash" {
               cpu    = "1000m"  # cap at 1 CPU
               memory = "2Gi"    # cap at 2 GiB RAM
             }
+
+          }
+          volume_mount {
+            name       = "logstash-config"
+            mount_path = "/usr/share/logstash/config/logstash.yml"
+            sub_path   = "logstash.yml"
+          }
+
+          volume_mount {
+            name       = "logstash-pipeline"
+            mount_path = "/usr/share/logstash/pipeline/logstash.conf"
+            sub_path   = "logstash.conf"
+          }
+
+        }	
+
+        volume {
+          name = "logstash-config"
+          config_map {
+            name = kubernetes_config_map.logstash_config.metadata[0].name
+          }
+        }
+        volume {
+         name = "logstash-pipeline"
+         config_map {
+           name = kubernetes_config_map.logstash_config2.metadata[0].name
           }
         }
       }
@@ -620,7 +724,8 @@ resource "kubernetes_deployment" "logstash" {
   }
 }
 
-# Use loadbalancer to expose Elasticsearch, Kibana and Logstash with their respective ports ====================================================================================================
+# Use loadbalancer to expose Elasticsearch, Kibana and Logstash with their respective ports
+# Elasticsearch
 resource "kubernetes_service" "elasticsearch" {
   metadata {
     name      = "elasticsearch"
@@ -641,6 +746,7 @@ resource "kubernetes_service" "elasticsearch" {
   }
 }
 
+# Kibana
 resource "kubernetes_service" "kibana" {
   metadata {
     name      = "kibana"
@@ -661,9 +767,45 @@ resource "kubernetes_service" "kibana" {
   }
 }
 
-# ELK Stack Classic Kubernetes Resources ===============================================================================================
+# Logstash
+resource "kubernetes_service" "logstash" {
+  metadata {
+    name      = "logstash"
+    namespace = "default"
+  }
 
-# Elasticsearch-alt with data and logs buiten outside the container
+  spec {
+    type = "LoadBalancer"
+
+    selector = {
+      app = "logstash"
+    }
+
+    port {
+      name        = "api"
+      port        = 9600
+      target_port = 9600
+    }
+
+    port {
+      name        = "beats"
+      port        = 5044
+      target_port = 5044
+
+    }
+
+    port {
+      name        = "syslog"
+      port        = 514
+      target_port = 514
+      protocol    = "TCP"
+
+    }
+  }
+}
+
+# ELK Stack Classic Kubernetes Resources
+# Elasticsearch-alt with data and logs  outside the container
 resource "kubernetes_deployment" "elasticsearch2" {
   depends_on = [
     kubernetes_persistent_volume_claim.elk_data_pvc,
@@ -702,6 +844,11 @@ resource "kubernetes_deployment" "elasticsearch2" {
             name       = "elasticsearch-logs"
             mount_path = "/usr/share/elasticsearch/logs"
           }
+          volume_mount {
+            name       = "elasticsearch-config"
+            mount_path = "/usr/share/elasticsearch/config/elasticsearch.yml"
+            sub_path   = "elasticsearch.yml"
+          }
         }
 
         volume {
@@ -714,6 +861,12 @@ resource "kubernetes_deployment" "elasticsearch2" {
           name = "elasticsearch-logs"
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim.elk_logs_pvc.metadata[0].name
+          }
+        }
+        volume {
+          name = "elasticsearch-config"
+          config_map {
+            name = kubernetes_config_map.elasticsearch_config.metadata[0].name
           }
         }
       }
@@ -755,6 +908,7 @@ resource "kubernetes_deployment" "kibana2" {
             name       = "kibana-data"
             mount_path = "/usr/share/kibana/data"
           }
+
         }
 
         volume {
@@ -807,6 +961,16 @@ resource "kubernetes_deployment" "logstash2" {
             name       = "logstash-logs"
             mount_path = "/usr/share/logstash/logs"
           }
+          volume_mount {
+            name       = "logstash-config"
+            mount_path = "/usr/share/logstash/config/logstash.yml"
+            sub_path   = "logstash.yml"
+          }
+          volume_mount {
+            name       = "logstash-pipelines"
+            mount_path = "/usr/share/logstash/config/pipelines.yml"
+            sub_path   = "pipelines.yml"
+          }
         }
 
         volume {
@@ -827,11 +991,25 @@ resource "kubernetes_deployment" "logstash2" {
             claim_name = kubernetes_persistent_volume_claim.elk_logs_pvc.metadata[0].name
           }
         }
+        volume {
+          name = "logstash-config"
+          config_map {
+            name = kubernetes_config_map.logstash_config.metadata[0].name
+          }
+        }
+        volume {
+          name = "logstash-pipelines"
+          config_map {
+          name = kubernetes_config_map.logstash_pipelines.metadata[0].name
+          }
+        }
+
       }
     }
   }
 }
 
+# Elasticsearch Pipeline
 resource "kubernetes_service" "elasticsearch_alt" {
   depends_on = [kubernetes_persistent_volume_claim.elk_pvc]
   metadata {
@@ -852,6 +1030,7 @@ resource "kubernetes_service" "elasticsearch_alt" {
   }
 }
 
+# Kibana Pipeline
 resource "kubernetes_service" "kibana_alt" {
   depends_on = [kubernetes_persistent_volume_claim.elk_pvc]
   metadata {
@@ -872,6 +1051,7 @@ resource "kubernetes_service" "kibana_alt" {
   }
 }
 
+# Logstash Pipeline
 resource "kubernetes_service" "logstash_alt" {
   depends_on = [kubernetes_persistent_volume_claim.elk_pvc]
   metadata {
